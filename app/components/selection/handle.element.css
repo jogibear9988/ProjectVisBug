@@ -4,6 +4,7 @@
   display: grid;
   grid-area: 1 / -1;
   place-self: var(--align-self, center) var(--justify-self, center);
+  position: absolute;
   transform: translate(var(--translate-x, 0), var(--translate-y, 0));
 }
 

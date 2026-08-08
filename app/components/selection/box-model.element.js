@@ -1,4 +1,5 @@
 import { BoxModelStyles } from '../styles.store'
+import { getBoxQuad, quadBounds, quadPath, sideMidpoint } from './quad'
 
 export class BoxModel extends HTMLElement {
 
@@ -16,42 +17,43 @@ export class BoxModel extends HTMLElement {
 
   set position(payload) {
     this.$shadow.innerHTML = this.render(payload)
-    if (!this.drawable.measurements) // && payload.color === 'pink'
-      this.createMeasurements(payload)
+    this.createMeasurements({...payload, ...this.drawable.measurementQuads})
   }
 
   render({mode, bounds, sides, color = 'pink', element}) {
     const total_height  = bounds.height + sides.bottom + sides.top
     const total_width   = bounds.width + sides.right + sides.left
-
-    const q1 =  element.getBoxQuads({ box: 'border' })[0];
-    const left = Math.min(q1.p1.x, q1.p2.x, q1.p3.x, q1.p4.x);
-    const top = Math.min(q1.p1.y, q1.p2.y, q1.p3.y, q1.p4.y);
+    const borderQuad = getBoxQuad(element)
+    const borderBounds = quadBounds(borderQuad)
+    const origin = {x: borderBounds.left, y: borderBounds.top}
+    let outerQuad
+    let innerQuad
 
     if (mode === 'padding') {
-      const q2 = element.getBoxQuads({ box: 'content' })[0];
+      outerQuad = getBoxQuad(element, 'padding')
+      innerQuad = getBoxQuad(element, 'content')
       this.drawable = {
         height:   bounds.height - (sides.borders.top + sides.borders.bottom),
         width:    bounds.width - (sides.borders.right + sides.borders.left),
         top:      0 + sides.borders.top,
         left:     0 + sides.borders.left,
         rotation: 'rotate(-45)',
-        d:        "M" + [q1.p1, q1.p2, q1.p3, q1.p4].map(x => (x.x - left) + ',' + (x.y - top)).join(' ') + 'Z '
-                + "M" + [q2.p1, q2.p2, q2.p3, q2.p4].map(x => (x.x - left) + ',' + (x.y - top)).join(' ') + 'Z'
       }
     }
     else if (mode === 'margin') {
-      const q2 = element.getBoxQuads({ box: 'margin' })[0];
+      outerQuad = getBoxQuad(element, 'margin')
+      innerQuad = borderQuad
       this.drawable = {
         height:   total_height,
         width:    total_width,
         top:      0 - sides.top,
         left:     0 - sides.left,
         rotation: 'rotate(45)',
-        d:        "M" + [q1.p1, q1.p2, q1.p3, q1.p4].map(x => (x.x - left) + ',' + (x.y - top)).join(' ') + 'Z '
-                + "M" + [q2.p1, q2.p2, q2.p3, q2.p4].map(x => (x.x - left) + ',' + (x.y - top)).join(' ') + 'Z'
       }
     }
+
+    this.drawable.d = `${quadPath(outerQuad, origin)} ${quadPath(innerQuad, origin)}`
+    this.drawable.measurementQuads = {outerQuad, innerQuad, origin}
 
     if (color === 'pink') {
       this.drawable.bg = 'color(display-p3 1 0 1 / 15%)'
@@ -95,94 +97,27 @@ export class BoxModel extends HTMLElement {
     this.style.setProperty('--offset-bottom', `${this.drawable.height - sides.bottom}px`)
   }
 
-  createMeasurements({mode, bounds, sides, color}) {
-    const win_width   = window.innerWidth
-    const pill_height = 18
-    const offset      = 3
+  createMeasurements({sides, color, outerQuad, innerQuad, origin}) {
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      if (!sides[side]) continue
 
-    if (mode === 'margin') {
-      if (sides.top) {
-        this.createMeasurement({
-          x: (bounds.width / 2) - offset,
-          y: (window.scrollY * -1) - sides.top,
-          d: sides.top,
-          q: 'top',
-          v: true,
-          color,
-        })
-      }
-      if (sides.bottom) {
-        this.createMeasurement({
-          x: (bounds.width / 2) - offset,
-          y: (window.scrollY * -1) + bounds.height,
-          d: sides.bottom,
-          q: 'bottom',
-          v: true,
-          color,
-        })
-      }
-      if (sides.right) {
-        this.createMeasurement({
-          x: bounds.width,
-          y: (window.scrollY * -1) + (bounds.height / 2) - offset,
-          d: sides.right,
-          q: 'right',
-          v: false,
-          color,
-        })
-      }
-      if (sides.left) {
-        this.createMeasurement({
-          x: sides.left * -1,
-          y: (window.scrollY * -1) + (bounds.height / 2) - offset,
-          d: sides.left,
-          q: 'left',
-          v: false,
-          color,
-        })
-      }
-    }
-    else if (mode === 'padding') {
-      if (sides.top) {
-        this.createMeasurement({
-          x: (bounds.width / 2) - offset,
-          y: (window.scrollY * -1) + sides.borders.top,
-          d: sides.top,
-          q: 'top',
-          v: true,
-          color,
-        })
-      }
-       if (sides.bottom) {
-         this.createMeasurement({
-           x: (bounds.width / 2) - offset,
-           y: (window.scrollY * -1) + (bounds.height - sides.bottom - sides.borders.bottom),
-           d: sides.bottom,
-           q: 'bottom',
-           v: true,
-           color,
-         })
-       }
-       if (sides.right) {
-         this.createMeasurement({
-           x: bounds.width - sides.right - sides.borders.right,
-           y: (window.scrollY * -1) + (bounds.height / 2) - offset,
-           d: sides.right,
-           q: 'right',
-           v: false,
-           color,
-         })
-       }
-       if (sides.left) {
-         this.createMeasurement({
-           x: 0 + sides.borders.left,
-           y: (window.scrollY * -1) + (bounds.height / 2) - offset,
-           d: sides.left,
-           q: 'left',
-           v: false,
-           color,
-         })
-       }
+      const start = sideMidpoint(outerQuad, side)
+      const end = sideMidpoint(innerQuad, side)
+      const dx = end.x - start.x
+      const dy = end.y - start.y
+
+      this.createMeasurement({
+        x: start.x - origin.x,
+        y: start.y - origin.y,
+        d: sides[side],
+        length: Math.hypot(dx, dy),
+        angle: Math.atan2(dy, dx),
+        q: side,
+        v: false,
+        local: true,
+        centered: true,
+        color,
+      })
     }
   }
 

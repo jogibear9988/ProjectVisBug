@@ -1,6 +1,5 @@
 import $ from 'blingblingjs'
 import { HandleStyles } from '../styles.store'
-import { clamp } from '../../utilities/numbers'
 
 export class Handle extends HTMLElement {
 
@@ -8,6 +7,7 @@ export class Handle extends HTMLElement {
     super()
     this.$shadow = this.attachShadow({mode: 'closed'})
     this.styles = [HandleStyles]
+    this.on_resize_start = this.on_element_resize_start.bind(this)
   }
 
   connectedCallback() {
@@ -15,7 +15,7 @@ export class Handle extends HTMLElement {
     this.$shadow.innerHTML = this.render()
 
     this.button = this.$shadow.querySelector('button')
-    this.button.addEventListener('pointerdown', this.on_element_resize_start.bind(this))
+    this.button.addEventListener('pointerdown', this.on_resize_start)
 
     this.placement = this.getAttribute('placement')
   }
@@ -47,7 +47,7 @@ export class Handle extends HTMLElement {
 
     if (!sourceEl) return
 
-    const t = sourceEl.convertPointFromNode(e, document.body.parentElement);
+    const t = sourceEl.convertPointFromNode(e, document.documentElement)
 
     const { x: initialX, y: initialY } = t
     const initialStyle = getComputedStyle(sourceEl)
@@ -68,94 +68,82 @@ export class Handle extends HTMLElement {
       e.preventDefault()
       e.stopPropagation()
 
-      const t = sourceEl.convertPointFromNode({ x: e.clientX, y: e.clientY }, document.body.parentElement);
-
-      const newX = clamp(0, t.x, document.documentElement.clientWidth)
-      const newY = clamp(0, t.y, document.documentElement.clientHeight)
+      const {x: newX, y: newY} = sourceEl.convertPointFromNode(e, document.documentElement)
 
       const diffX = newX - initialX
       const diffY = newY - initialY
+      const leftWidth = Math.max(0, initialWidth - diffX)
+      const rightWidth = Math.max(0, initialWidth + diffX)
+      const topHeight = Math.max(0, initialHeight - diffY)
+      const bottomHeight = Math.max(0, initialHeight + diffY)
+      const leftShift = initialWidth - leftWidth
+      const topShift = initialHeight - topHeight
 
       switch (placement) {
         case 'top-start': {
-          const newWidth = initialWidth - diffX
-          const newHeight = initialHeight - diffY
-          const newTranslate = initialTransform.translate(diffX, diffY).transformPoint()
+          const newTransform = initialTransform.translate(leftShift, topShift)
 
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
-            sourceEl.style.height = `${newHeight}px`
-            sourceEl.style.transform = `translate(${newTranslate.x}px, ${newTranslate.y}px)`
+            sourceEl.style.width = `${leftWidth}px`
+            sourceEl.style.height = `${topHeight}px`
+            sourceEl.style.transform = newTransform.toString()
           })
           break
         }
         case 'top-center': {
-          const newHeight = initialHeight - diffY
-          const newTranslate = initialTransform.translate(0, diffY).transformPoint()
+          const newTransform = initialTransform.translate(0, topShift)
 
           requestAnimationFrame(() => {
-            sourceEl.style.height = `${newHeight}px`
-            sourceEl.style.transform = `translate(${newTranslate.x}px, ${newTranslate.y}px)`
+            sourceEl.style.height = `${topHeight}px`
+            sourceEl.style.transform = newTransform.toString()
           })
           break
         }
         case 'top-end': {
-          const newWidth = initialWidth + diffX
-          const newHeight = initialHeight - diffY
-          const newTranslate = initialTransform.translate(0, diffY).transformPoint()
+          const newTransform = initialTransform.translate(0, topShift)
 
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
-            sourceEl.style.height = `${newHeight}px`
-            sourceEl.style.transform = `translate(${newTranslate.x}px, ${newTranslate.y}px)`
+            sourceEl.style.width = `${rightWidth}px`
+            sourceEl.style.height = `${topHeight}px`
+            sourceEl.style.transform = newTransform.toString()
           })
           break
         }
         case 'middle-start': {
-          const newWidth = initialWidth - diffX
-          const newTranslate = initialTransform.translate(diffX).transformPoint()
+          const newTransform = initialTransform.translate(leftShift)
 
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
-            sourceEl.style.transform = `translate(${newTranslate.x}px, ${newTranslate.y}px)`
+            sourceEl.style.width = `${leftWidth}px`
+            sourceEl.style.transform = newTransform.toString()
           })
           break
         }
         case 'middle-end': {
-          const newWidth = initialWidth + diffX
-
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
+            sourceEl.style.width = `${rightWidth}px`
           })
           break
         }
         case 'bottom-start': {
-          const newWidth = initialWidth - diffX
-          const newHeight = initialHeight + diffY
-          const newTranslate = initialTransform.translate(diffX, 0).transformPoint()
+          const newTransform = initialTransform.translate(leftShift, 0)
 
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
-            sourceEl.style.height = `${newHeight}px`
-            sourceEl.style.transform = `translate(${newTranslate.x}px, ${newTranslate.y}px)`
+            sourceEl.style.width = `${leftWidth}px`
+            sourceEl.style.height = `${bottomHeight}px`
+            sourceEl.style.transform = newTransform.toString()
           })
           break
         }
         case 'bottom-center': {
-          const newHeight = initialHeight + diffY
-
           requestAnimationFrame(() => {
-            sourceEl.style.height = `${newHeight}px`
+            sourceEl.style.height = `${bottomHeight}px`
           })
           break
         }
         case 'bottom-end': {
-          const newWidth = initialWidth + diffX
-          const newHeight = initialHeight + diffY
-
           requestAnimationFrame(() => {
-            sourceEl.style.width = `${newWidth}px`
-            sourceEl.style.height = `${newHeight}px`
+            sourceEl.style.width = `${rightWidth}px`
+            sourceEl.style.height = `${bottomHeight}px`
           })
           break
         }
@@ -174,7 +162,7 @@ export class Handle extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.button.removeEventListener('pointerdown', this.on_element_resize_start.bind(this))
+    this.button && this.button.removeEventListener('pointerdown', this.on_resize_start)
   }
 
   render() {

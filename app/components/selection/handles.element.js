@@ -1,6 +1,6 @@
-import $ from 'blingblingjs'
 import { HandlesStyles } from '../styles.store'
-import { isFixed } from '../../utilities/';
+import { isFixed } from '../../utilities/'
+import { getBoxQuad, quadBounds, quadPath, sideMidpoint } from './quad'
 
 export class Handles extends HTMLElement {
 
@@ -8,39 +8,43 @@ export class Handles extends HTMLElement {
     super()
     this.$shadow = this.attachShadow({mode: 'closed'})
     this.styles = [HandlesStyles]
-    this.on_resize = this.on_window_resize.bind(this)
+    this.on_position_change = this.on_position_change.bind(this)
+    this.position_frame = null
+    this.source_el = null
   }
 
   connectedCallback() {
     this.$shadow.adoptedStyleSheets = this.styles
     this.setAttribute('popover', 'manual')
     this.showPopover && this.showPopover()
-    window.addEventListener('resize', this.on_window_resize)
+    window.addEventListener('resize', this.on_position_change)
+    window.addEventListener('scroll', this.on_position_change, true)
   }
 
   disconnectedCallback() {
-    if (this.hidePopover && this.hidePopover()) this.hidePopover && this.hidePopover()
-    window.removeEventListener('resize', this.on_window_resize)
+    this.hidePopover && this.hidePopover()
+    window.removeEventListener('resize', this.on_position_change)
+    window.removeEventListener('scroll', this.on_position_change, true)
+    this.position_frame && window.cancelAnimationFrame(this.position_frame)
   }
 
-  on_window_resize() {
-    if (!this.$shadow) return
-    window.requestAnimationFrame(() => {
-      const node_label_id = this.$shadow.host.getAttribute('data-label-id')
-      const [source_el] = $(`[data-label-id="${node_label_id}"]`)
+  on_position_change() {
+    if (this.position_frame || !this.source_el) return
 
-      if (!source_el) return
+    this.position_frame = window.requestAnimationFrame(() => {
+      this.position_frame = null
+      if (!this.source_el.isConnected) return
 
       this.position = {
-        node_label_id,
-        el: source_el,
-        isFixed: isFixed(source_el),
+        node_label_id: this.getAttribute('data-label-id'),
+        el: this.source_el,
       }
     })
   }
 
   set position({el, node_label_id}) {
-    this.$shadow.innerHTML = this.render(el.getBoxQuads()[0], node_label_id, isFixed(el))
+    this.source_el = el
+    this.$shadow.innerHTML = this.render(getBoxQuad(el), node_label_id, isFixed(el))
 
     if (this._backdrop) {
       this.backdrop = {
@@ -70,15 +74,21 @@ export class Handles extends HTMLElement {
   render(quad, node_label_id, isFixed) {
     this.$shadow.host.setAttribute('data-label-id', node_label_id)
 
-    const left = Math.min(quad.p1.x, quad.p2.x, quad.p3.x, quad.p4.x);
-    const right = Math.max(quad.p1.x, quad.p2.x, quad.p3.x, quad.p4.x);
-    const top = Math.min(quad.p1.y, quad.p2.y, quad.p3.y, quad.p4.y);
-    const bottom = Math.max(quad.p1.y, quad.p2.y, quad.p3.y, quad.p4.y);
-    const width = right - left;
-    const height = bottom - top;
+    const {left, top, width, height} = quadBounds(quad)
+    const origin = {x: left, y: top}
+    const positions = {
+      'top-start':    quad.p1,
+      'top-center':   sideMidpoint(quad, 'top'),
+      'top-end':      quad.p2,
+      'middle-start': sideMidpoint(quad, 'left'),
+      'middle-end':   sideMidpoint(quad, 'right'),
+      'bottom-start': quad.p4,
+      'bottom-center': sideMidpoint(quad, 'bottom'),
+      'bottom-end':   quad.p3,
+    }
 
     this.style.setProperty('--top', `${top + (isFixed ? 0 : window.scrollY)}px`)
-    this.style.setProperty('--left', `${left}px`)
+    this.style.setProperty('--left', `${left + (isFixed ? 0 : window.scrollX)}px`)
     this.style.setProperty('--position', isFixed ? 'fixed' : 'absolute')
     this.style.setProperty('--width', `${width}px`)
     this.style.setProperty('--height', `${height}px`)
@@ -90,16 +100,13 @@ export class Handles extends HTMLElement {
         viewBox="0 0 ${width} ${height}"
         version="1.1" xmlns="http://www.w3.org/2000/svg"
       >
-        <path d="M${quad.p1.x - left},${quad.p1.y - top} ${quad.p2.x - left},${quad.p2.y - top} ${quad.p3.x - left},${quad.p3.y - top} ${quad.p4.x - left},${quad.p4.y - top}Z" stroke="var(--neon-pink)" fill="none"></path>
+        <path d="${quadPath(quad, origin)}" stroke="var(--neon-pink)" fill="none"></path>
       </svg>
-      <visbug-handle style="position:absolute; left: ${quad.p1.x - left}px; top: ${quad.p1.y - top}px;" placement="top-start"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p1.x + (quad.p2.x - quad.p1.x) / 2 - left}px; top: ${quad.p1.y + (quad.p2.y - quad.p1.y) / 2 - top}px;" placement="top-center"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p2.x - left}px; top: ${quad.p2.y - top}px;" placement="top-end"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p1.x + (quad.p4.x - quad.p1.x) / 2 - left}px; top: ${quad.p1.y + (quad.p4.y - quad.p1.y) / 2 - top}px;" placement="middle-start"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p2.x + (quad.p3.x - quad.p2.x) / 2 - left}px; top: ${quad.p2.y + (quad.p3.y - quad.p2.y) / 2 - top}px;" placement="middle-end"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p4.x - left}px; top: ${quad.p4.y - top}px;" placement="bottom-start"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p4.x + (quad.p3.x - quad.p4.x) / 2 - left}px; top: ${quad.p4.y + (quad.p3.y - quad.p4.y) / 2 - top}px;" placement="bottom-center"></visbug-handle>
-      <visbug-handle style="position:absolute; left: ${quad.p3.x - left}px; top: ${quad.p3.y - top}px;" placement="bottom-end"></visbug-handle>
+      ${Object.entries(positions).map(([placement, point]) => `
+        <visbug-handle
+          style="left:${point.x - left}px;top:${point.y - top}px"
+          placement="${placement}"
+        ></visbug-handle>`).join('')}
     `
   }
 }
